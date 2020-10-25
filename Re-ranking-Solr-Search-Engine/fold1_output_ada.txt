@@ -1,0 +1,116 @@
+
+[+] General Parameters:
+Training data:	Fold1/train_1.txt
+Test data:	Fold1/test_1.txt
+Validation data:	Fold1/val_1.txt
+Feature vector representation: Dense.
+Ranking method:	AdaRank
+Feature description file:	Unspecified. All features will be used.
+Train metric:	NDCG@10
+Test metric:	NDCG@10
+Feature normalization: No
+Model file: fold1_results_ada.txt
+
+[+] AdaRank's Parameters:
+No. of rounds: 500
+Train with 'enequeue': Yes
+Tolerance: 0.002
+Max Sel. Count: 5
+
+Reading feature file [Fold1/train_1.txt]: 0... Reading feature file [Fold1/train_1.txt]: 0... Reading feature file [Fold1/train_1.txt]: 0... Reading feature file [Fold1/train_1.txt]: 0... Reading feature file [Fold1/train_1.txt]: 0... Reading feature file [Fold1/train_1.txt]: 0... Reading feature file [Fold1/train_1.txt]: 0... Reading feature file [Fold1/train_1.txt]: 0... Reading feature file [Fold1/train_1.txt]: 0... Reading feature file [Fold1/train_1.txt]... [Done.]            
+(90 ranked lists, 83408 entries read)
+Reading feature file [Fold1/val_1.txt]: 0... Reading feature file [Fold1/val_1.txt]: 0... Reading feature file [Fold1/val_1.txt]: 0... Reading feature file [Fold1/val_1.txt]... [Done.]            
+(30 ranked lists, 28842 entries read)
+Reading feature file [Fold1/test_1.txt]: 0... Reading feature file [Fold1/test_1.txt]: 0... Reading feature file [Fold1/test_1.txt]: 0... Reading feature file [Fold1/test_1.txt]... [Done.]            
+(30 ranked lists, 30000 entries read)
+Initializing... [Done]
+---------------------------
+Training starts...
+--------------------------------------------------------
+#iter   | Sel. F.  | NDCG@10-T | NDCG@10-V | Status    | 
+--------------------------------------------------------
+1       | 1        | 0.4764    | 0.5562    | OK        | 
+2       | 6        | 0.476     | 0.5541    | OK        | 
+3       | 6        |           |           | ROLLBACK  | 
+4       | 1        | 0.4764    | 0.5562    | OK        | 
+5       | 1        |           |           | ROLLBACK  | 
+6       | 7        | 0.4758    | 0.5595    | OK        | 
+7       | 7        |           |           | ROLLBACK  | 
+8       | 5        | 0.4777    | 0.5542    | OK        | 
+9       | 5        |           |           | ROLLBACK  | 
+10      | 3        | 0.4791    | 0.5562    | OK        | 
+11      | 3        |           |           | ROLLBACK  | 
+12      | 8        | 0.174     | 0.1802    | DAMN      | 
+12      | 3        | 0.4791    | 0.5562    | OK        | 
+13      | 3        | 0.4808    | 0.5552    | OK        | 
+14      | 3        | 0.4805    | 0.5557    | OK        | 
+15      | 3        | 0.482     | 0.5562    | OK        | 
+16      | 3        | 0.4803    | 0.556     | OK        | 
+17      | 3        | 0.4802    | 0.5532    | OK        | 
+18      | 3        | 0.4802    | 0.5458    | OK        | 
+19      | 3        | 0.479     | 0.5444    | OK        | 
+20      | 3        | 0.4791    | 0.54      | OK        | 
+21      | 3        | 0.4784    | 0.5417    | OK        | 
+22      | 3        | 0.4796    | 0.5446    | OK        | 
+23      | 3        | 0.4808    | 0.5376    | OK        | 
+24      | 3        | 0.4806    | 0.5376    | OK        | 
+25      | 3        | 0.4795    | 0.5343    | OK        | 
+26      | 3        | 0.4771    | 0.5323    | DAMN      | 
+26      | 5        | 0.4795    | 0.5343    | OK        | 
+27      | 5        | 0.4795    | 0.5343    | OK        | 
+28      | 5        | 0.4794    | 0.5343    | OK        | 
+29      | 5        | 0.4794    | 0.5343    | OK        | 
+30      | 5        | 0.4794    | 0.5343    | OK        | 
+31      | 5        | 0.4797    | 0.5343    | OK        | 
+32      | 5        | 0.4797    | 0.5343    | OK        | 
+33      | 5        | 0.4794    | 0.5343    | OK        | 
+34      | 5        | 0.4795    | 0.5343    | OK        | 
+35      | 5        | 0.4795    | 0.5343    | OK        | 
+36      | 5        | 0.4798    | 0.5343    | OK        | 
+37      | 5        | 0.4798    | 0.5343    | OK        | 
+38      | 5        | 0.4798    | 0.5343    | OK        | 
+39      | 5        | 0.4798    | 0.5343    | OK        | 
+40      | 5        | 0.4798    | 0.5343    | OK        | 
+41      | 5        | 0.4798    | 0.5321    | F. REM.   | 
+42      | 4        | 0.1181    | 0.1214    | DAMN      | 
+42      | 7        | 0.4754    | 0.5354    | DAMN      | 
+42      | 7        | 0.4754    | 0.5354    | DAMN      | 
+42      | 6        | 0.4798    | 0.5321    | OK        | 
+43      | 6        | 0.4798    | 0.5321    | OK        | 
+44      | 6        | 0.4798    | 0.532     | OK        | 
+45      | 6        | 0.4798    | 0.5319    | OK        | 
+46      | 6        | 0.4799    | 0.5318    | OK        | 
+47      | 6        | 0.4799    | 0.5318    | OK        | 
+48      | 6        | 0.4799    | 0.5318    | OK        | 
+49      | 6        | 0.4812    | 0.5318    | OK        | 
+50      | 6        | 0.4812    | 0.5318    | OK        | 
+51      | 6        | 0.4812    | 0.5318    | OK        | 
+52      | 6        | 0.4812    | 0.5318    | OK        | 
+53      | 6        | 0.4812    | 0.5318    | OK        | 
+54      | 6        | 0.4812    | 0.5318    | OK        | 
+55      | 6        | 0.4812    | 0.5318    | OK        | 
+56      | 6        | 0.4812    | 0.5318    | OK        | 
+57      | 6        | 0.481     | 0.5318    | OK        | 
+58      | 6        | 0.4811    | 0.5318    | OK        | 
+59      | 6        | 0.4811    | 0.5318    | OK        | 
+60      | 6        | 0.4811    | 0.5318    | OK        | 
+61      | 6        | 0.4811    | 0.5318    | OK        | 
+62      | 6        | 0.4811    | 0.5297    | OK        | 
+63      | 6        | 0.4811    | 0.5297    | F. REM.   | 
+64      | 5        | 0.4811    | 0.5297    | OK        | 
+65      | 6        | 0.4811    | 0.5297    | OK        | 
+66      | 6        | 0.4812    | 0.53      | OK        | 
+67      | 6        | 0.4812    | 0.53      | OK        | 
+68      | 6        | 0.4812    | 0.53      | OK        | 
+69      | 6        | 0.4812    | 0.53      | OK        | 
+70      | 6        | 0.4812    | 0.5278    | OK        | 
+71      | 6        | 0.4812    | 0.5278    | F. REM.   | 
+72      | 4        | 0.1181    | 0.1214    | DAMN      | 
+--------------------------------------------------------
+Finished sucessfully.
+NDCG@10 on training data: 0.4791
+NDCG@10 on validation data: 0.5562
+---------------------------------
+NDCG@10 on test data: 0.4357
+
+Model saved to: fold1_results_ada.txt

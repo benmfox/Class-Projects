@@ -1,0 +1,2 @@
+## Investing Rising Rates of Depression and Suicide in the United States
+In this project, I utilize the WHO's mortality database to analyze the rising rates of depression and suicide in the United States. 

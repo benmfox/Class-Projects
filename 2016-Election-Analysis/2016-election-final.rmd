@@ -1,0 +1,639 @@
+---
+title: "2016 Election Prediction"
+author: "Ben Fox, Jessica Jin, Amirhossein Reisizadeh (PSTAT 231)"
+date: "3/23/2018"
+output:
+  html_document: default
+  pdf_document: default
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
+
+indent2 = '  '
+indent2 = paste(rep(indent2, 2), collapse='')
+indent3 = paste(rep(indent2, 3), collapse='')
+
+doeval = FALSE
+
+library(knitr)
+library(tidyverse)
+library(ggmap)
+library(maps)
+library(Rtsne)
+library(NbClust)
+library(tree)
+library(maptree)
+library(class)
+library(reshape2)
+```
+
+Predicting voter behavior is complicated for many reasons despite the tremendous effort in collecting, analyzing, and understanding many available datasets. 
+For our final project, we will analyze the 2016 presidential election dataset, but, first, some background.
+
+# Background
+
+The presidential election in 2012 did not come as a surprise. Some correctly predicted the outcome of the election correctly including [Nate Silver](https://en.wikipedia.org/wiki/Nate_Silver), 
+and [many speculated his approach](https://www.theguardian.com/science/grrlscientist/2012/nov/08/nate-sliver-predict-us-election).
+
+Despite the success in 2012, the 2016 presidential election came as a 
+[big surprise](https://fivethirtyeight.com/features/the-polls-missed-trump-we-asked-pollsters-why/) 
+to many, and it was a clear example that even the current state-of-the-art technology can surprise us.
+
+Answer the following questions in one paragraph for each.
+
+1. What makes voter behavior prediction (and thus election forecasting) a hard problem?
+    
+    Voter behaviour is such a difficult problem due to the predicting of an unknown variable over time. Essentially, the goal is to model an unobserved variable prior to the variable existing based off of current intended voter behavior. In other words, voters' intentions on election day are predicted based off of current voters' intentions. The difficulty arises due to the time series problem, the predicting of voter behavior based off of polls (which are biased in themselves), and the simulation of national/state level events that could potentially sway voter behavior. All of these add up to a difficult statistical problem.
+
+2. What was unique to Nate Silver's approach in 2012 that allowed him to achieve good predictions?
+
+    Nate Silver in both 2008, 2012, and even 2016 (though he was wrong) had consistently better predictions than all other statisticians. The Nate Silver approach divides the problem into two parts, modelling voting behavior and modelling the polls. In modelling voting behavior, he uses what he calls a "Nowcast." This is where he uses poll data along with other various factors (race, religion, etc.) to model how voters would vote on the current day (a baseline). He then can use a time series model that is constantly changing based off of random "shock" events (shock events being national/state level occurences which sway voters' intentions) to predict election day results. In modelling the polls (polls are current voter intentions), there are a few factors that must be estimated such as sampling variation (which pollsters account for), the shy tory effect (voters lying about their true intentions), pollster bias, and the house effect. Pollster bias can't be estimated until after the election, so previous election data can be used to estimate this. To estimate the house effect and sampling variation, Nate Silver finds the range of probabilities for a particular candidate from multiple polls, and using bayes theorem predicts the actual percentage of voter intention. This can be used to update the model and as more polls come in and time goes on, the election can be predicted.
+
+3. What went wrong in 2016? What do you think should be done to make future predictions better?
+
+    In 2016, nothing went wrong in terms of his statistical method. However, the polls were off, which in turn lead to inaccurate estimations on election day. The polls were off due to a systematic error that resulted in the overestimation of Clinton's lead in the election. One error resulted from the underestimation of the number of voters who actually would vote, particularly whites with no college degree (who voted for Trump). Another factor was the reluctancy of people being polled to tell pollsters who they were voting for (ie women for Trump).  Additionally, it's possible that support for Trump came close to the election as people began to realize that he was the GOP candidate for the election and a third party candidate was not going to win. These errors which specifically occured in the midwest region, resulted in the inaccurate estimation of the winner on election day.
+
+# Data
+
+```{r data}
+# read election data, census metadata, and census data
+election.raw = read.csv("election.csv") %>% as.tbl
+census_meta = read.csv("metadata.csv", sep = ";") %>% as.tbl
+census = read.csv("census.csv") %>% as.tbl
+census$CensusTract = as.factor(census$CensusTract)
+```
+
+## Election data
+
+Following is the first few rows of the `election.raw` data:
+
+```{r, echo=FALSE}
+kable(election.raw %>% head)
+```
+
+The meaning of each column in `election.raw` is clear except `fips`. The accronym is short for [Federal Information Processing Standard](https://en.wikipedia.org/wiki/FIPS_county_code).
+
+In our dataset, `fips` values denote the area (US, state, or county) that each row of data represent: i.e., some rows in `election.raw` are summary rows. These rows have `county` value of `NA`. There are two kinds of summary rows:
+
+* Federal-level summary rows have `fips` value of `US`.
+* State-level summary rows have names of each states as `fips` value.
+
+## Census data
+
+Following is the first few rows of the `census` data:
+
+```{r, echo=FALSE}
+kable(census %>% head)
+```
+
+### Census data: column metadata
+
+Column information is given in `metadata`.
+
+```{r, dependson=data, echo=FALSE}
+kable(census_meta)
+```
+
+## Data wrangling
+4. Remove summary rows from `election.raw` data: i.e.,
+
+    * Federal-level summary into a `election_federal`.
+    
+    * State-level summary into a `election_state`.
+    
+    * Only county-level data is to be in `election`.
+
+
+```{r removeData, indent = indent2}
+# remove rows where state value is US and county value is NA, this returns national election results
+election_federal = election.raw %>% filter(fips == "US" & is.na(county)) 
+# remove rows where fips isn't federal data and where county is NA, this returns state level election results
+election_state = election.raw %>% filter(fips != "US" & is.na(county)) 
+# remove federal and state level data from county data, this returns county level data
+election = election.raw %>% filter(!is.na(county)) 
+```
+
+
+5. How many named presidential candidates were there in the 2016 election? Draw a bar chart of all votes received by each candidate
+
+    There were 32 candidates in the 2016 election; however, there is a category "None of these candidates" which received 28,863 votes that are for a variety of other candidates. A bar chart of the candidates' names and number of votes can be seen below.
+
+```{r names, indent = indent2}
+ # number of candidates in election
+length(election_federal$candidate)
+# bar chart of candidates with their number of votes
+ggplot(election_federal) + geom_col(aes(candidate,votes)) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + labs(title = "2016 Election Results Bar Chart")
+```
+
+
+6. Create variables `county_winner` and `state_winner` by taking the candidate with the highest proportion of votes.
+    
+    Hint: to create `county_winner`, start with `election`, group by `fips`, compute `total` votes, and `pct = votes/total`. Then choose the highest row using `top_n` (variable `state_winner` is similar).
+
+```{r winnerwinner, indent = indent2}
+# the election winner for each county in the US
+county_winner = election %>% group_by(county, fips) %>% mutate(pct = votes/sum(votes)) %>% top_n(1, pct)
+# the election winner for each state in the US
+state_winner = election_state %>% group_by(state) %>% mutate(pct = votes/sum(votes)) %>% top_n(1, pct)
+```
+
+# Visualization
+
+Visualization is crucial for gaining insight and intuition during data mining. We will map our data onto maps.
+
+The R package `ggplot2` can be used to draw maps. Consider the following code.
+
+```{r, message=FALSE}
+# acquire state map data from ggplot package maps
+states = map_data("state")
+# plot US map of states 
+ggplot(data = states) + 
+  geom_polygon(aes(x = long, y = lat, fill = region, group = group), color = "white") + 
+  coord_fixed(1.3) +
+  guides(fill=FALSE) + labs(title = "US States")  # color legend is unnecessary and takes too long
+```
+
+The variable `states` contain information to draw white polygons, and fill-colors are determined by `region`.
+
+7. Draw county-level map by creating `counties = map_data("county")`. Color by county
+
+    Below is a map of the US counties, colored arbitrarily. 
+```{r countyMap, indent=indent2}
+# acquire county map data from ggplot package maps
+county = map_data("county")
+# plot US counties
+ggplot(data = county) + geom_polygon(aes(x=long, y=lat, fill = subregion, group = group), color= "white") + coord_fixed(1.3) + guides(fill = F) +labs(title = "US Counties")
+```
+
+8. Now color the map by the winning candidate for each state. First, combine `states` variable and `state_winner` we created earlier using `left_join()`. 
+  Note that `left_join()` needs to match up values of states to join the tables; however, they are in different formats: e.g. `AZ` vs. `arizona`.
+  Before using `left_join()`, create a common column by creating a new column for `states` named
+  `fips = state.abb[match(some_column, some_function(state.name))]`. 
+  Replace `some_column` and `some_function` to complete creation of this new column. Then `left_join()`.
+  Your figure will look similar to state_level [New York Times map](https://www.nytimes.com/elections/results/president).
+
+    The states data from ggplot with latitude and longitudes to plot states on a US map were combined with the corresponding state election winner. The plot below shows the results, and is equivalent to the above NYTimes plot. Hillary Clinton won states in blue, and Donald Trump won states in red. You will notice Alaska and Hawaii are not in the map below. The maps package for ggplot only graphs the continental US states. Donald Trump won Alaska, and Hillary Clinton won Hawaii.
+    
+```{r stateWinnerWinner, indent=indent2, warning = F, fig.height=12, fig.width=12}
+# find the state abbreviation and save it in a new column 'fips' in states variable
+states = states %>% mutate(fips = state.abb[match(states$region, tolower(state.name))])
+# join the states and states winner by their fips (which are state abbreviations)
+states = left_join(states,state_winner, by="fips")
+# plot the state winners and color by candidate
+ggplot(data = states) + geom_polygon(aes(x = long, y = lat, fill = candidate, group = group), color = "white") + coord_fixed(1.3) + labs(title = "US 2016 State Election Winner")
+```
+
+
+9. The variable `county` does not have `fips` column. So we will create one by pooling information from `maps::county.fips`.
+  Split the `polyname` column to `region` and `subregion`. Use `left_join()` combine `county.fips` into `county`. Also, `left_join()` previously created variable `county_winner`. 
+  Your figure will look similar to county-level [New York Times map](https://www.nytimes.com/elections/results/president).
+
+    Below is the resultant county winners from the 2016 election. This is nearly equivalent to the NYTimes graph above. However, there are two grayed out counties due to a few counties not being in the county.fips or map county dataset. These counties are not plotted and are in grey.
+
+```{r countyWinner, indent=indent2, warning=F, fig.height= 12, fig.width=12, warning = F}
+# create a variable county.fips that has the fips identifier for the county from ggplot maps data
+county.fips = separate(maps::county.fips, polyname, into = c("region", "subregion"), sep=",") 
+# further manipulate county.fips, some counties have a colon specifying a city within that county. 
+county.fips = separate(county.fips, subregion, into = c("subregion", "city"), sep = ":") %>% dplyr::select(-city) 
+# change type of fips to a factor to match fips in county_winner data
+county.fips$fips = as.factor(county.fips$fips)
+# join county and county.fips data by state and county
+countyJoined = left_join(county, county.fips, by = c("region", "subregion"))
+# join countyJoined data with the winner from each county and combine by fips identifiers
+countyJoined = left_join(countyJoined, county_winner, by="fips")
+# plot the election county winners
+ggplot(data = countyJoined) + geom_polygon(aes(x=long, y=lat, fill = candidate, group = group), color= "white") + coord_fixed(1.3) + labs(title = "US 2016 County Election Winner")
+```
+
+10. **For Problem 10, see last problem (Problem 21)**
+
+11. The `census` data contains high resolution information (more fine-grained than county-level).  
+    In this problem, we aggregate the information into county-level data by computing `TotalPop`-weighted average of each attributes for each county. Create the following variables:
+    
+    * _Clean census data `census.del`_: 
+      start with `census`, filter out any rows with missing values, 
+      convert {`Men`, `Employed`, `Citizen`} attributes to a percentages (meta data seems to be inaccurate), 
+      compute `Minority` attribute by combining {Hispanic, Black, Native, Asian, Pacific}, remove {`Walk`, `PublicWork`, `Construction`}.  
+      _Many columns seem to be related, and, if a set that adds up to 100%, one column will be deleted._  
+
+        Below, the census data is cleaned. Variables men, employed, and citizen are converted to percentages, and minority variables were combined into one variable Minority. Further, any variable that could be inferred from  other variables in a set (e.g % of women can be found knowing the % of men), were removed to reduce the degrees of freedom. Thus, women, hispanic, black, native, asian, pacific, walk, public work, and construction were removed.
+
+```{r cleanCensus, indent=indent2}
+# drop NA rows, convert men, employed and citizens to percentages
+census.del = census %>% drop_na() %>% mutate_at(vars(Men,Employed,Citizen), funs(100*./TotalPop)) %>% mutate(Minority = Hispanic + Black + Native + Asian + Pacific)
+# remove one variable from each variable set that add to 1
+census.del = census.del %>% dplyr::select(-c(Women, Hispanic, Black, Native, Asian, Pacific, Walk, PublicWork,Construction))
+```
+      
+
+    * _Sub-county census data, `census.subct`_: 
+      start with `census.del` from above, `group_by()` two attributes {`State`, `County`}, 
+      use `add_tally()` to compute `CountyTotal`. Also, compute the weight by `TotalPop/CountyTotal`.
+      
+        The sub-county data was consolidated into census.subct and the weight of each sub-county was calculated.
+
+```{r subcounty, indent=indent2}
+# the subcounty data was stored and the weight of each subcounty was found
+census.subct = census.del %>% group_by(State, County) %>% add_tally(TotalPop) %>% mutate_at(vars(n), funs(TotalPop/n))
+```
+
+    * _County census data, `census.ct`_: 
+      start with `census.subct`, use `summarize_at()` to compute weighted sum
+
+
+    * _Print few rows of `census.ct`_: 
+
+        The weighted sum for each county was found based off of the weight of each sub-county found previously. The first few rows of the census data are printed below.
+
+```{r summarise, indent=indent2}
+# weighted county data based on total population for each county
+census.ct = census.subct %>% summarise_at(vars(Men:Minority), funs(sum(. * n))) 
+# summary of first few rows
+kable(census.ct %>% head)
+```
+
+
+# Dimensionality reduction
+
+12. Run PCA for both county & sub-county level data. Save the principal components data frames, call them ct.pc and subct.pc, respectively. What are the most prominent loadings of the first two principal components PC1 and PC2?
+
+    The most prominent loadings are displayed below. Loadings were determined to be significant if their values were $>0.3$ for the first two principal components. The prominent loadings are the variables that contribute most to the variation in the data. Thus, the variables displayed below contribute more to the variation in the data.
+```{r PCA, indent=indent2}
+# PCA for census.ct data, data needs to be scaled and centered (centering is automatic)
+ct.pc = prcomp(census.ct[,-c(1:2)], scale = T)
+# PCA for sub-county censusdata
+subct.pc = prcomp(census.subct[,-c(1:3)], scale = T)
+# most prominent loadings in PC1 for county level data
+names(which(abs(ct.pc$rotation[,1]) > 0.3))
+# most prominent loadings in PC2 for county level data
+names(which(abs(ct.pc$rotation[,2]) > 0.3))
+# most prominent loadings in PC1 for sub-county level data
+names(which(abs(subct.pc$rotation[,1]) > 0.3)) 
+# most prominent loadings in PC2 for sub-county level data
+names(which(abs(subct.pc$rotation[,2]) > 0.3))
+```
+
+# Clustering
+
+13. With `census.ct`, perform hierarchical clustering using Euclidean distance metric complete linkage to find 10 clusters. Repeat clustering process with the first 5 principal components of `ct.pc`.
+    Compare and contrast clusters containing San Mateo County. Can you hypothesize why this would be the case?
+
+    Using the function 'cutree()', we can specify how many clusters to cut the hierarchical clustering tree too. When the number of clusters is 10, San Mateo County is in the 9th cluster on the non-PCA data. In the PCA-data over the first 5 princial components, San Mateo county is in the 4th cluster. Hierarchical clustering is an agglomerative clustering method. Each observation begins in its own cluster and based on the clustering linkage method (the complete linkage method in this case, which uses the max distance between two points in separate clusters to determine if those clusters should be combined), clusters are formed. Counties that appear in the same cluster are correlated. In the non-PCA data, the cluster San Mateo County is in is correlated with the other counties in that cluster. This represents the data in San Mateo well, and it considers all variables. In PCA data, the dimensionality is reduced to 5, and the cluster San Mateo County is in is correlated to the counties with similar principal components. This represents San Mateo County by itself less. It better represents the relationship between the principal components containing the variation in San Mateo County.
+
+
+```{r hca, indent=indent2}
+# set a random seed for reproducibility
+set.seed(11)
+# find euclidean distance between variables
+census.ct.dist = dist(census.ct[,-c(1,2)])
+# perform hierarchical clustering using complete linkage method
+hc.census.ct = hclust(census.ct.dist, method = "complete")
+# which cluster is San Mateo County in, when the number of clusters is 10?
+cutree(hc.census.ct, k=10)[which(census.ct$County == "San Mateo")]
+
+# find euclidean distance between first 5 PCs
+census.ctpc.dist = dist(ct.pc$x[,1:5])
+# perform hierarchical clustering using complete linkage method
+hc.census.ctpc = hclust(census.ctpc.dist, method = "complete")
+# which cluster is San Mateo County in for PCA data, when number of clusters is 10?
+cutree(hc.census.ctpc, k=10)[which(census.ct$County == "San Mateo")]
+```
+
+# Classification
+
+In order to train classification models, we need to combine `county_winner` and `census.ct` data.
+This seemingly straightforward task is harder than it sounds. 
+Following code makes necessary changes to merge them into `election.cl` for classification.
+
+```{r combine}
+census.ct = as.data.frame(census.ct)
+tmpwinner = county_winner %>% ungroup %>%
+  mutate(state = state.name[match(state, state.abb)]) %>%               ## state abbreviations
+  mutate_at(vars(state, county), tolower) %>%                           ## to all lowercase
+  mutate(county = gsub(" county| columbia| city| parish", "", county))  ## remove suffixes
+tmpcensus = census.ct %>% mutate_at(vars(State, County), tolower)
+
+election.cl = tmpwinner %>%
+  left_join(tmpcensus, by = c("state"="State", "county"="County")) %>% 
+  na.omit
+
+## saves meta information to attributes
+attr(election.cl, "location") = election.cl %>% dplyr::select(c(county, fips, state, votes, pct))
+election.cl = election.cl %>% dplyr::select(-c(county, fips, state, votes, pct))
+```
+
+Using the following code, partition data into 80% training and 20% testing:
+```{r partition}
+set.seed(10) 
+n = nrow(election.cl)
+in.trn= sample.int(n, 0.8*n) 
+trn.cl = election.cl[ in.trn,]
+tst.cl = election.cl[-in.trn,]
+```
+
+Using the following code, define 10 cross-validation folds:
+```{r CVfolds}
+set.seed(20) 
+nfold = 10
+folds = sample(cut(1:nrow(trn.cl), breaks=nfold, labels=FALSE))
+```
+
+Using the following error rate function:
+```{r errorRate}
+calc_error_rate = function(predicted.value, true.value){
+  return(mean(true.value!=predicted.value))
+}
+records = matrix(NA, nrow=4, ncol=2) # create records matrix
+colnames(records) = c("train.error","test.error")
+rownames(records) = c("tree","knn","log","LDA")
+```
+
+## Classification: native attributes
+
+13. Decision tree: train a decision tree by `cv.tree()`. Prune tree to minimize misclassification. Be sure to use the `folds` from above for cross-validation. Visualize the trees before and after pruning. Save training and test errors to `records` variable.  
+
+    A decision tree was trained using the election data and the tree was pruned to minimize misclassifiction. The misclassification error rates for the non-pruned and pruned trees are shown below. Clearly the non-pruned tree is difficult to interpret, which is why pruning is so useful even with a higher misclassification rate. The best size tree was found to be 16. Interestingly, according to the pruned tree, whether or not people use public transportation is a big factor in how they vote, along with them being white. See the summaries of the trees to see the factors used to decide who voters would vote for. Lastly, the records matrix was updated with the test and training errors from the tree cross validation. It is displayed below.
+
+```{r decTree, indent=indent2,fig.height=12, fig.width=12}
+# set the tree parameters using tree.control
+treeOps = tree.control(nrow(trn.cl), minsize = 5, mindev = 1e-06)
+# create the tree using the combined election/census data
+electiontree = tree(candidate ~ ., data = trn.cl, control = treeOps)
+# summary of electiontree before pruning
+summary(electiontree)
+# draw the tree
+draw.tree(electiontree, cex = 0.6, size = 0)
+title("Classification Tree Before Pruning")
+## create pruned tree
+# perform cross validation to find best size for pruned tree
+cvPrune = cv.tree(electiontree, rand = folds, FUN = prune.misclass)
+# select smallest tree, with best representation of data
+best.size.cv1 = min(cvPrune$size[cvPrune$dev == min(cvPrune$dev)])
+# the best size tree
+best.size.cv1
+# prune the tree
+prunedelection = prune.tree(electiontree, best = best.size.cv1, method = "misclass")
+# pruned tree summary
+summary(prunedelection)
+# draw the pruned tree
+draw.tree(prunedelection, cex = 0.6)
+title("Classification Tree After Pruning")
+# update records matrix with calculated error rates
+records["tree", ] = c(calc_error_rate(predict(prunedelection, trn.cl, type = "class"), trn.cl$candidate), calc_error_rate(predict(prunedelection, tst.cl, type = "class"), tst.cl$candidate))
+records
+```
+
+    
+14. K-nearest neighbor: train a KNN model for classification. Use cross-validation to determine the best number of neighbors, and plot number of neighbors vs. resulting training and validation errors. Compute test error and save to `records`.  
+
+    The best number of neighbors was found to be 35. Due to the large dataset of election.cl, this is a reasonable choice of neighbors for classification; however, could result in a high variance model. The records matrix was updated with the correspoinding training and test errors from the best k. The plot of training and test errors with number of neighbors can be seen below. The best number of neighbors is where the test error is lowest. This method had high training and test errors, most likely due to the large dimensionality and large k.
+
+```{r knn, cache = T, indent=indent2, message=F}
+# library(plyr)
+# set random seed
+set.seed(2)
+# a vector of ks to test to find best k
+kvec = c(1, seq(10, 50, length.out = 9))
+# initialize variable to null to keep track of errors
+error.folds = NULL
+do.chunk <- function(chunkid, folddef, Xdat, Ydat, k) { # function for crosvalidation to find best k in kvec
+      train = (folddef != chunkid)
+      Xtr = Xdat[train, ]
+      Ytr = Ydat[train]
+      Xvl = Xdat[!train, ]
+      Yvl = Ydat[!train]
+      
+      ## get classifications for current training chunks 
+      predYtr = knn(train = Xtr, test = Xtr, cl = Ytr, k = k)
+      ## get classifications for current test chunk
+      predYvl = knn(train = Xtr, test = Xvl, cl = Ytr, k = k)
+      data.frame(train.error = calc_error_rate(predYtr, Ytr), val.error = calc_error_rate(predYvl, Yvl))
+}
+# 10 fold cross validation, using above function
+for (j in kvec) {
+  tmp = plyr::ldply(1:10, do.chunk, folddef = folds, Xdat = election.cl[,-1], Ydat = election.cl$candidate, k = j)
+  tmp$neighbors = j
+  error.folds = rbind(error.folds, tmp)
+  }
+errors = melt(error.folds, id.vars = c("neighbors"), value.name = "error")
+# find test error means for each k and corresponding best k based on lowest test error
+valerror = errors %>% filter(variable == "val.error") %>% group_by(neighbors, variable) %>% summarise_each(funs(mean), error) %>% ungroup() %>% dplyr::select(-variable)
+best.knn = valerror$neighbors[which.min(valerror$error)]
+best.knn
+# find training error means for each k
+trainerror = errors %>% filter(variable == "train.error") %>% group_by(neighbors, variable) %>% summarise_each(funs(mean), error) %>% ungroup() %>% dplyr::select(-variable)
+# plot test error, training error, and number of neighbors
+ggplot() + geom_line(aes(trainerror$neighbors, trainerror$error, colour = "training error")) + geom_line(aes(valerror$neighbors, valerror$error, colour = "test error")) + labs(title = "Validation vs Training Errors KNN Classifier", x = "Number of Neighbors", y = "Error")
+# update records matrix with best k test and train errors.
+records["knn",] = c(trainerror$error[which(trainerror$neighbors == best.knn)], valerror$error[which(valerror$neighbors == best.knn)])
+records
+```
+
+
+## Classification: principal components
+
+Instead of using the native attributes, we can use principal components in order to train our classification models. After this section, a comparison will be made between classification model performance between using native attributes and principal components.  
+    
+```{r pcarecords}
+pca.records = matrix(NA, nrow=2, ncol=2)
+colnames(pca.records) = c("train.error","test.error")
+rownames(pca.records) = c("tree","knn")
+```
+
+15. Compute principal components from the independent variables in training data. Then, determine the number of minimum number of PCs needed to capture 90% of the variance. Plot proportion of variance explained.
+
+    The minimum number of principal components needed to explain $\geq 90%$ of the data was found to be 13. The proportion of the variance explained by each prinipal component is shown in the graph below. Notice that each principal component explains less and less of the data. 
+```{r pcatrain, indent=indent2}
+# election.cl training data PCA (scaled)
+el.pca = prcomp(dplyr::select(trn.cl, -candidate), scale = TRUE)
+# the proportion of variance explained
+el.pve = (el.pca$sdev^2)/sum(el.pca$sdev^2)
+# plot proportion of variance explained
+plot(el.pve, type = "b", main = "Proportion of Variance Explained by m-th PC", ylab = "Proportion of Variance (PVE)", xlab= "Principal Component")
+# cumulative PVE
+el.cpve = cumsum(el.pve)
+# number of PCs needed to explain >= 90% of variance
+which.max(el.cpve >= 0.9)
+```
+
+16. Create a new training data by taking class labels and principal components. Call this variable `tr.pca`. Create the test data based on principal component loadings: i.e., transforming independent variables in test data to principal components space. Call this variable `test.pca`.
+
+    PCA training and test data are created from the election.cl training and test data below.
+
+```{r PCAdata, indent=indent2}
+# create training PCA data
+tr.pca = data.frame(trn.cl$candidate, el.pca$x)
+colnames(tr.pca)[1] = "candidate"
+
+# create test PCA data (test data needs to be scaled and multiplied by loadings)
+test.pca = as.matrix(scale(dplyr::select(tst.cl, -candidate))) %*% as.matrix(el.pca$rotation)
+test.pca = data.frame(tst.cl$candidate, test.pca)
+colnames(test.pca)[1] = "candidate"
+
+# the full PCA data matrix
+all.pca = rbind(tr.pca, test.pca)
+```
+
+17. Decision tree: repeat training of decision tree models using principal components as independent variables. Record resulting errors.
+
+    The decision tree was trained using principal components. Once again, the non-pruned tree is hard to interpret. The best size tree was found to be 27. The summaries of the trees and the principal components used to decide election results can be seen below. It makes sense that the first few principal components are used primarily in deciding how voters will vote as they contain the majority of the variance in the data. The pca.records matrix was updated with the correspoinding training and test errors. It can be seen below. Compared to the native attributes decision tree, the test error was slightly higher, and the number of nodes was higher, so the native attributes tree is easier to interpret. 
+```{r pctree, indent = indent2, fig.height=12, fig.width=12}
+# create tree 'pc.tree'
+pc.tree = tree(candidate ~ ., control = tree.control(nrow(tr.pca), minsize = 6, mindev = 1e-6), data = tr.pca)
+summary(pc.tree)
+# visualize tree before pruning
+draw.tree(pc.tree, cex = 0.6) #before pruning
+title("Classification Tree Before Pruning")
+# cross validation to find best number of nodes
+pc.cvtree = cv.tree(pc.tree, rand = folds, FUN = prune.misclass)
+best.size.cv2 = min(pc.cvtree$size[pc.cvtree$dev == min(pc.cvtree$dev)])
+# the best size for pruning
+best.size.cv2
+# prune the tree
+pc.tree.pruned = prune.tree(pc.tree, best = best.size.cv2, method = "misclass")
+summary(pc.tree.pruned)
+# visualize tree after pruning
+draw.tree(pc.tree.pruned, cex = 0.6) # after pruning
+title("Classification Tree After Pruning")
+
+# training and test errors
+pred.pc.train = predict(pc.tree.pruned, tr.pca, type = "class")
+pred.pc.test = predict(pc.tree.pruned, test.pca, type = "class")
+
+# add training and test error to records
+pca.records["tree",] <- c(calc_error_rate(pred.pc.train, tr.pca$candidate), calc_error_rate(pred.pc.test, test.pca$candidate))
+pca.records
+```
+
+
+18. K-nearest neighbor: repeat training of KNN classifier using principal components as independent variables. Record resulting errors.
+
+    The KNN classifier was done again on PCA data. The do.chunk function was used to find the best number of neighbors to be used in the classifier. The best number of neighbors was found to be 15. This is expected to be less than the native attribute data because principal components represent more of the variance in the data than do samples themselves. Thus, smaller clusters are expected. The records matrix was updated with the train and test errors. Further, the training and test errors were plotted below with number of neighbors. Compared to the native attributes data, the training and test errors were smaller, and the dimensionality of the problem was significantly reduced. Thus, knn on PCA data for this dataset performs better than the native attribute data and could be used for classification of election results.
+
+```{r bestkpc, cache = TRUE, indent = indent2}
+## need to find the best number of neighbors, k using function do.chunk and kvec
+# create matrix to hold errors
+t.errors = matrix(NA, nrow=length(kvec), ncol = 3)
+colnames(t.errors) = c("Neighbors", "train.error", "test.error")
+
+for(i in 1:length(kvec)) {
+  error.folds2 = plyr::ldply(1:10, do.chunk, folds, dplyr::select(all.pca, -candidate), all.pca$candidate, kvec[i])
+  kPCtrain.error = mean(error.folds2$train.error)
+  kPCtest.error = mean(error.folds2$val.error)
+  t.errors[i,] = c(kvec[i], kPCtrain.error, kPCtest.error)
+}
+
+# best k for PC data
+best.kPCA = t.errors[which.min(t.errors[,3]),1] 
+best.kPCA
+
+# training and test errors plotted with number of neighbors
+ggplot() + geom_line(aes(t.errors[,1], t.errors[,2], colour = "training error")) + geom_line(aes(t.errors[,1], t.errors[,3], colour = "test error")) + labs(title = "Validation vs Training Errors PCA KNN Classifier", x = "Number of Neighbors", y = "Error")
+
+# update PCA records matrix with best k test and train errors.
+pca.records["knn",] = c(t.errors[3,2], t.errors[3,3])
+pca.records
+```
+
+# Interpretation & Discussion
+
+19. This is an open question. Interpret and discuss any insights gained and possible explanations. Use any tools at your disposal to make your case: visualize errors on the map, discuss what does/doesn't seems reasonable based on your understanding of these methods, propose possible directions (collecting additional data, domain knowledge, etc)
+
+    Throughout the analysis, it was clear that the data analysis technique used, whether clustering or classifying, needs to be picked with careful consideration. We examined a variety of methods for data analysis. At first we looked at hierarchical clustering. This technique is very much so an exploratory analysis that doesn't offer any insight into how people will vote, but rather how variables and samples are similar. This is useful if one is interested in ralationships between samples and between variables, which could give insight later into how people will vote once the weight of these variables in determining voter outcome is found.
+
+    As for classification methods, for the native attributes data, we performed both the decision tree method and k nearest neighbors. It is clear that the KNN does not work well with the election data and the decision tree is the best model. This is likely due to the fact that there are a large number of variables, making it more difficult to classify each county and making the knn model have a high k and a corresponding high variance. There are other classification methods that we can use for this data such as the logistic regression and linear discriminant analysis (LDA) as seen in Problem 20. 
+
+    Additionally, data was transformed by principal component analysis to reduce the dimensionality of the data. Clearly, PCA helped the k nearest neighbors method have a smaller k and a smaller variance (as depicted by its lower test error), due to the reduced dimension. Principal component analysis is useful when the number of variables is large ($>5$), since this can reduce the dimensionality of the problem to make interpretations of analysis techniques easier. Though, the decision tree for the native attributes data outperformed the PCA decision tree, since it had lower test and training errors, as well as fewer number of nodes. The following plots shows the differences in errors between the methods used for the native attributes (along with the methods from problem 20 for native attributes) and the PCA transformed data.
+
+```{r errors, indent=indent2}
+records["log",] = c(0.0659,0.0749) # data from Problem 20
+records["LDA",] = c(0.0647, 0.0733) # data from Problem 20
+# native attribute data
+ggplot(melt(records), aes(Var1, value)) + geom_bar(aes(fill = Var2), position = "dodge", stat="identity") + labs(title = "Native AttributesComparison of Errors for Classification Techniques", x = "Classification Method", y = "Error") +  scale_fill_discrete(name = "Error Type")
+    
+# PCA data
+ggplot(melt(pca.records), aes(Var1, value)) + geom_bar(aes(fill = Var2), position = "dodge", stat="identity") + labs(title = "PCA Data Comparison of Errors for Classification Techniques", x = "Classification Method", y = "Error") + scale_fill_discrete(name = "Error Type")
+```
+
+    Overall, when choosing methods to predict binomial response data (e.g Hillary Clinton or Donald Trump), with a large number of variables, the techniques that have a "curse of dimensionality" (like knn) should be avoided and many techniques should be considered, with and without dimensionality reduction.
+
+    To make the analysis better, it would have been useful to have more data in the census. Particularly, religious affiliation, college-degree, marital status, age, sexual orientation, veteran status, disabilities, gun ownership, etc., and many other factors, which we think play a larger role in deciding how people will vote. It was clear that the variables in the census data were not make or break decision variables. This was depicted in the proportion of variance explained by the principal components. There was no one variable that contributed significantly to the variation in the data; rather, many variables contributed a small amount to the variation in the data. It would be interesting to find fewer variables that contributed significantly ($>90%$) to the data in say 5 principal components, instead of 13 principal components (as above) needed to explain 90% of the data. 
+
+    All in all, the analyses used and methods trained are useful classifiers for the election data depending on whether one is using PCA transformed or native attribute data. If the 2016 election were to happen again, predictions could be made on how voters would vote based on their demographics; however, as many in the US feel, nobody wants to see another 2016 US presidential election.
+
+# Taking it further
+
+20. Propose and tackle at least one interesting question. Be creative! Some possibilities are:
+
+    * Data preprocessing: we aggregated sub-county level data before performing classification. Would classification at the sub-county level before determining the winner perform better? What implicit assumptions are we making?
+
+    * Feature engineering: would a non-linear classification method perform better? Would you use native features or principal components?
+
+    * Additional classification methods: logistic regression, LDA, QDA, SVM, random forest, etc. (You may use methods beyond this course). How do these compare to KNN and tree method?
+
+    * Bootstrap: Perform boostrap to generate plots similar to Figure 4.10/4.11. Discuss the results. 
+
+    Logistic regression was trained using the native attributes training data and test data was used to predict candidate winners. The records matrix was further updated with the resultant training and test errors. Overall, log regression had a comparable training and test error with the decision tree and both perform better than knn. 
+
+```{r logreg, indent=indent2, warning=F}
+# trn.cl = training set of election.cl
+# tst.cl = test set of election.cl
+
+# logistic regression model for election data
+el.glm = glm(candidate ~ ., dat = trn.cl, family = binomial)
+
+# get classification for training chunk
+prob.trn = predict(el.glm, trn.cl, type = "response")
+pred.trn = as.factor(ifelse(prob.trn <= 0.5, "Donald Trump", "Hillary Clinton"))
+tr.cand = as.factor(ifelse(trn.cl$candidate == "Hillary Clinton", "Hillary Clinton", "Donald Trump"))
+
+# get classification for test chunk
+prob.tst = predict(el.glm, tst.cl, type = "response")
+pred.tst = as.factor(ifelse(prob.tst <= 0.5, "Donald Trump", "Hillary Clinton"))
+tst.cand = as.factor(ifelse(tst.cl$candidate == "Hillary Clinton", "Hillary Clinton", "Donald Trump"))
+
+# training and test error
+log.train.error = calc_error_rate(pred.trn, tr.cand)
+log.test.error = calc_error_rate(pred.tst, tst.cand)
+
+# update records matrix
+
+records["log",] = c(log.train.error, log.test.error)
+records
+```
+    Furthermore, LDA was performed on the native attributes training data. The records matrix was updated as seen below. Overall, LDA, logistic regression, and the decision tree had similar training and test error rates. The decision tree method was the best and knn was the worst. 
+```{r lda, indent=indent2, warning = F}
+# get lda from training set
+el.lda = MASS::lda(candidate ~ ., data = trn.cl)
+
+# get classification for training set
+trn.lda = predict(el.lda, trn.cl) 
+
+# get classification for test set
+tst.lda = predict(el.lda, tst.cl)
+
+# get training and test error
+lda.train.error = calc_error_rate(trn.lda$class, trn.cl$candidate)
+lda.test.error = calc_error_rate(tst.lda$class, tst.cl$candidate)
+
+# update records matrix
+records["LDA",] = c(lda.train.error, lda.test.error)
+records
+```
+
+21. Create a visualization of your choice using `census` data. Many exit polls noted that 
+    [demographics played a big role in the election](https://fivethirtyeight.com/features/demographics-not-hacking-explain-the-election-results/).
+    Use [this Washington Post article](https://www.washingtonpost.com/graphics/politics/2016-election/exit-polls/) 
+    and [this R graph gallery](https://www.r-graph-gallery.com/) for ideas and inspiration.
+
+    Below, density plots were created to display the way counties with particular percentages of men, minorities, and employed people voted. As seen in the plots, counties with higher percentages of minorities voted for Hillary Clinton, while counties with low percentages voted for Donald Trump. Counties with higher percentages of men voted slightly more for Donald Trump. Lastly, counties with higher percentages of employed people voted more for Hillary Clinton. Interestingly, since we know how the election turned out in 2016, we can plot the density functions for each candidate. However, if we assumed one (as opposed to two in the below cases) normal distribution, these underlying distributions could theoretically be predicted through gaussian mixture models.
+```{r manorwoman, indent=indent2}
+candidate = election.cl$candidate
+ggplot() + geom_density(aes(election.cl$Minority, color = candidate)) + labs(title = "County, Minority Percentages 2016 Election Vote", x= "Percentage of Minorities")
+ggplot() + geom_density(aes(election.cl$Men, color = candidate)) + labs(title = "County, Male Percentages 2016 Election Vote", x= "Percentage of Males")
+ggplot() + geom_density(aes(election.cl$Employed, color = candidate)) + labs(title = "County, Employed People Percentages 2016 Election Vote", x= "Percentage of Employed People")
+```
+    
